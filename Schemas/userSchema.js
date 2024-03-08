@@ -16,7 +16,11 @@ const userSchema = new Schema({
     password: {
         type: String,
         required: true
-    }
+    },
+    friends : Array,
+    ignored : Array ,
+    MyRequests : {type : Array , default : []},
+    SomeOnesRequests : {type : Array , default : []}
 });
 
 const User = mongoose.model('users', userSchema,'users');
