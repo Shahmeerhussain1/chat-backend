@@ -11,7 +11,7 @@ const port = 8080
 // const server = http.createServer(app);
 // const io = socketIo(server);
 const { Server } = require("socket.io");
-
+const HOST = '0.0.0.0';
 const server = http.createServer(app);
 const io = new Server(server ,
   {
@@ -21,7 +21,7 @@ const io = new Server(server ,
   }
 );
 
-server.listen(port, () => {
+server.listen(port,HOST, () => {
   console.log('Server running on port 8080');
 });
 
@@ -332,7 +332,6 @@ async function run() {
     console.log("You successfully connected to MongoDB!");
   } catch (err) {
     console.log("You not connected to MongoDB!", err);
-
   }
 }
 run()
