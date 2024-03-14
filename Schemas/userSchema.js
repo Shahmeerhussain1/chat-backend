@@ -5,20 +5,22 @@ const userSchema = new Schema({
     fullName: {
         type: String,
     },
+    profileImage : String , 
     email: {
         type: String,
         required: true,
         unique: true
     },
     _id: {
-        type: String,
-    },
+        type :  String,
+         default: () => new mongoose.Types.ObjectId().toString()
+     },
     password: {
         type: String,
         required: true
     },
-    friends : Array,
-    ignored : Array ,
+    friends : {type : Array , default : []},
+    ignored : {type : Array , default : []} ,
     MyRequests : {type : Array , default : []},
     SomeOnesRequests : {type : Array , default : []}
 });

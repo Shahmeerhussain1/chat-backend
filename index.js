@@ -6,14 +6,26 @@ const cors = require('cors')
 const bodyParser = require('body-parser');
 const socketIo = require("socket.io");
 const http = require('http');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const app = express()
 const port = 8080
 // const server = http.createServer(app);
 // const io = socketIo(server);
 const { Server } = require("socket.io");
+const multer = require('multer');
+// const sendFiles = require('./Cloudinary')
+const upload = multer({ dest: 'uploads/' });
+const cloudinary = require('cloudinary').v2;
+cloudinary.config({
+    cloud_name: 'dazznu7pv',
+    api_key: '464378216327312',
+    api_secret: 'CkXfLhn3-y_85-fbJv-4PE_I-qo'
+});
+
 const HOST = '0.0.0.0';
 const server = http.createServer(app);
-const io = new Server(server ,
+const io = new Server(server,
   {
     cors: {
       origin: "http://localhost:3000"
@@ -21,14 +33,18 @@ const io = new Server(server ,
   }
 );
 
-server.listen(port,HOST, () => {
+server.listen(port, HOST, () => {
   console.log('Server running on port 8080');
 });
 
 // app.listen(port, () => {
 //   console.log(`Example app listening on port ${port}`)
 // })
-
+// {
+//   "email" : "help@me.com",
+//   "fullName" : "help Me",
+//   "password" : "help@me.com"
+// }
 io.on('connection', (socket) => {
   console.log('A client connected');
 });
@@ -44,6 +60,138 @@ app.use(bodyParser.json());
 app.get('/', (req, res) => {
   res.send('Hello World!')
 })
+const Shields = {
+  SALT: 'e8d3a06b282c67d03a959cf88179c66f',
+  ALGORITHM: 'aes-256-cbc',
+  IV_LENGTH: 16,
+  KEY: 'f23dbbe74fa7853879d1cd480a2ddec2',
+  PRIVATE_KEY:
+    '118188eadccb71345738a3b3ad19161e43468959f0635ac0ca3e3c0b1c3c55b8',
+};
+const JWT_SECRET =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+const generatePassHash = (password) => {
+  return crypto
+    .pbkdf2Sync(password, Shields.SALT, 1000, 64, 'sha512')
+    .toString('hex');
+};
+const verifyPass = (pass, passHash) => {
+  const result = generatePassHash(pass) == passHash ? true : false;
+  return result;
+};
+
+app.post('/signup', upload.single('file'), async (req, res) => {
+  console.log('req?.body', req?.body);
+  console.log('req?.file', req?.file);
+
+  if (!req?.body?.email || !req?.body?.password) {
+      return res
+          .status(400)
+          .json({ message: 'Email and password are required.' , success : false });
+  }
+
+  const existingUser = await User.findOne({ email: req?.body?.email });
+
+  if (existingUser) {
+      return res
+          .status(400)
+          .json({ message: 'User with this email already exists.', success : false });
+  }
+
+  try {
+      let newPass = generatePassHash(req?.body?.password);
+      const user = new User({
+          email: req?.body?.email,
+          fullName: req?.body?.fullName,
+          password: newPass,
+      });
+      console.log('user user', user);
+
+      const uploadResult = await new Promise((resolve, reject) => {
+          cloudinary.uploader.upload(req.file.path, { public_id: user._id }, function (error, result) {
+              if (error) {
+                  console.log('error', error);
+                  reject(error);
+              } else {
+                  console.log('result', result);
+                  user.profileImage = result?.secure_url;
+                  resolve(result);
+              }
+          });
+      });
+
+      const userData = await user.save();
+      const token = jwt.sign({ userId: userData._id }, JWT_SECRET, {
+          expiresIn: '1h',
+      });
+      delete userData.password;
+      return res.status(201).json({
+          message: 'User registered successfully.',
+          data: userData,
+          token: token,
+          success : true
+      });
+  } catch (error) {
+      console.error('Error:', error);
+      return res.status(500).json({ message: 'Internal server error.' ,success : false });
+  }
+});
+
+app.post('/login',  async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Email and password are required.' });
+    }
+
+    try {
+      const user = await User.findOne({ email });
+      if (!user) {
+        console.log('User not found');
+        return res
+          .status(200)
+          .json({ success: false, message: 'Invalid email or password.' });
+      }
+      console.log('user1', user);
+      if (!verifyPass(password, user.password)) {
+        return res.status(200).json({ message: 'Invalid  password.' });
+      }
+      const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
+        expiresIn: '1h',
+      });
+
+      delete user.password
+
+
+      return res.json({
+        success: true,
+        message: 'Login successful.',
+        data: user,
+        token: token,
+      });
+    } catch (userError) {
+      console.error('User retrieval error:', userError);
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message: 'Login failed. Please try again later.',
+        });
+    }
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: 'Login failed. Please try again later.',
+      });
+  }
+})
+
+
 
 app.get('/allUser', async (req, res) => {
   if (req.query._id) {
@@ -302,11 +450,11 @@ app.post('/sendMessage', (req, res) => {
       }
     )
       .then(result => {
-        io.emit('messageSent',  {
-            senderId: req.body.senderId,
-            receiverId: req.body.receiverId,
-            message: req.body.message,
-            timeStamp: req.body.timeStamp
+        io.emit('messageSent', {
+          senderId: req.body.senderId,
+          receiverId: req.body.receiverId,
+          message: req.body.message,
+          timeStamp: req.body.timeStamp
         });
         res.status(200).json({ success: true });
       })
